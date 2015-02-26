@@ -10,6 +10,10 @@ import (
   "flag"
   "time"
   "log"
+  // "errors"
+  "bytes"
+  "os/exec"
+  "strings"
 )
 
 type Time struct {
@@ -17,6 +21,21 @@ type Time struct {
   Name            string                    `json:"name" bson:"name"`
   Start           time.Time                 `json:"start" bson:"start"`
   End             time.Time                 `json:"end" bson:"end,omitempty"`
+}
+
+func currentBranch() (string) {
+  if len(flag.Args()[1:]) == 0 {
+    cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+    var out bytes.Buffer
+    cmd.Stdout = &out
+    err := cmd.Run()
+    if err != nil {
+      return ""
+    }
+    return strings.Replace(out.String(), "\n", "", -1)
+  } else {
+    return flag.Arg(1)
+  }
 }
 
 func main() { 
@@ -34,9 +53,9 @@ func main() {
   flag.Parse()
   switch verb := flag.Arg(0); verb {
   case "start":
-    if len(flag.Args()) == 2 {
+    name := currentBranch()
+    if name != "" {
       var count int
-      name := flag.Arg(1)
       query := bson.M{"name": name, "start": bson.M{"$exists": true}, "end": bson.M{"$exists": false}}
       count, err = c.Find(query).Count()
       if err != nil {
@@ -60,9 +79,9 @@ func main() {
       fmt.Println("Passe um parametro")
     }
   case "end":
-    if len(flag.Args()) == 2 {
+    name := currentBranch()
+    if name != "" {
       var count int
-      name := flag.Arg(1)
       query := bson.M{"name": name, "start": bson.M{"$exists": true}, "end": bson.M{"$exists": false}}
 
       count, err = c.Find(query).Count()
@@ -95,8 +114,10 @@ func main() {
         fmt.Printf("Start\t\tEnd\t\tTotal\n")
         for _, t := range result {
           var duration time.Duration
-          duration = t.End.UTC().Sub(t.Start.UTC())
-          total += duration.Nanoseconds()
+          if !t.End.IsZero() {
+            duration = t.End.UTC().Sub(t.Start.UTC())
+            total += duration.Nanoseconds()
+          }
           fmt.Printf("%v\t%v\t%v\n", t.Start.Format("15:04:05"), t.End.Format("15:04:05"), duration)
         }
         totalDuration := time.Duration(total)
